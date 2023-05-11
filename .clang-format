@@ -1,0 +1,12 @@
+---
+BasedOnStyle:			WebKit
+
+AlignConsecutiveMacros:		Consecutive
+AlignTrailingComments:		true
+
+UseTab:				AlignWithSpaces
+IndentWidth:			8
+AccessModifierOffset:		-8
+
+PointerAlignment:		Right
+...
