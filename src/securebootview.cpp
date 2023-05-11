@@ -1,5 +1,13 @@
+//
+//  Copyright (c) 2023 Jon Palmisciano. All rights reserved.
+//
+//  Use of this source code is governed by the BSD 3-Clause license; a full copy
+//  of the license can be found in the LICENSE.txt file.
+//
+
 #include "securebootview.h"
 
+#include <algorithm>
 #include <cinttypes>
 
 using namespace BinaryNinja;
@@ -63,9 +71,11 @@ bool SecureBootViewType::IsDeprecated()
 
 SecureBootView::SecureBootView(BinaryView *data)
     : BinaryView(SecureBootViewDisplayName, data->GetFile(), data)
+    , m_logger(CreateLogger("BinaryView.iBoot"))
+    , m_completionEvent(nullptr)
+    , m_base(0)
+    , m_name("Unknown iBoot")
 {
-	m_logger = CreateLogger("BinaryView.iBoot");
-
 	std::vector<std::string> supportedVariants = {
 		"SecureROM",
 		"iBoot",
@@ -76,14 +86,10 @@ SecureBootView::SecureBootView(BinaryView *data)
 
 	auto rawName = data->ReadBuffer(0x200, 9).ToEscapedString();
 	for (auto const &v : supportedVariants) {
-		if (rawName.find(v) == std::string::npos)
-			continue;
-
-		m_name = v;
-		if (v == "SecureROM")
-			m_isROM = true;
-
-		break;
+		if (rawName.find(v) != std::string::npos) {
+			m_name = v;
+			break;
+		}
 	}
 }
 
@@ -129,18 +135,98 @@ uint64_t SecureBootView::GetPredictedBaseAddress()
 	return 0;
 }
 
-struct KnownOffsetSymbol {
+struct FixedOffsetSymbol {
 	std::uint32_t offset;
 	BNSymbolType type;
 	char const *name;
 };
 
-std::vector<KnownOffsetSymbol> KnownOffsetSymbols = {
+std::vector<FixedOffsetSymbol> KnownFixedOffsetSymbols = {
 	{ 0x0, FunctionSymbol, "_start" },
 	{ 0x200, DataSymbol, "build_banner_string" },
 	{ 0x240, DataSymbol, "build_style_string" },
 	{ 0x280, DataSymbol, "build_tag_string" },
 };
+
+void SecureBootView::DefineFixedOffsetSymbols()
+{
+	for (auto const &def : KnownFixedOffsetSymbols) {
+		auto userSymbol = new Symbol(def.type, def.name, m_base + def.offset);
+		DefineUserSymbol(userSymbol);
+
+		m_logger->LogInfo("Defined fixed-offset symbol `%s` at 0x%" PRIx64 ".", def.name, m_base + def.offset);
+	}
+}
+
+struct StringAssociatedSymbol {
+	char const *name;
+	char const *pattern;
+};
+
+std::vector<StringAssociatedSymbol> KnownStringAssociatedSymbols = {
+	{ "_panic", "double panic in" },
+	{ "_platform_get_usb_serial_number_string", "CPID:" },
+	{ "_platform_get_usb_more_other_string", " NONC:" },
+	{ "_image4_get_partial", "IMG4" },
+	{ "_UpdateDeviceTree", "fuse-revision" },
+	{ "_main_task", "debug-uarts" },
+	{ "_platform_init_display", "backlight-level" },
+	{ "_do_printf", "<null>" },
+	{ "_do_memboot", "Combo image too large" },
+	{ "_do_go", "Memory image not valid" },
+	{ "_task_init", "idle task" },
+	{ "_sys_setup_default_environment", "/System/Library/Caches/com.apple.kernelcaches/kernelcache" },
+	{ "_check_autoboot", "aborting autoboot due to user intervention" },
+	{ "_do_setpict", "picture too large" },
+	{ "_arm_exception_abort", "ARM %s abort at 0x%016llx:" },
+	{ "_do_devicetree", "Device Tree image not valid" },
+	{ "_do_ramdisk", "Ramdisk image not valid" },
+	{ "_usb_serial_init", "Apple USB Serial Interface" },
+	{ "_nvme_bdev_create", "construct blockdev for namespace %d" },
+	{ "_image4_dump_list", "image %p: bdev %p type" },
+	{ "_prepare_and_jump", "End of %s serial output" },
+	{ "_boot_upgrade_system", "/boot/kernelcache" },
+};
+
+std::string SecureBootView::GetStringValue(BNStringReference const &ref)
+{
+	auto buffer = ReadBuffer(ref.start, ref.length);
+	return { reinterpret_cast<char *>(buffer.GetData()), buffer.GetLength() };
+}
+
+std::vector<BNStringReference> SecureBootView::GetStringsContaining(char const *pattern)
+{
+	std::vector<BNStringReference> strings = GetStrings();
+
+	std::vector<BNStringReference> matches;
+	std::copy_if(strings.begin(), strings.end(), std::back_inserter(matches), [this, pattern](BNStringReference const &ref) {
+		return GetStringValue(ref).find(pattern) != std::string::npos;
+	});
+
+	return matches;
+}
+
+void SecureBootView::DefineStringAssociatedSymbols()
+{
+	for (auto const &def : KnownStringAssociatedSymbols) {
+		auto strings = GetStringsContaining(def.pattern);
+		if (strings.empty()) {
+			m_logger->LogDebug("Failed to find string with pattern \"%s\".", def.pattern);
+			continue;
+		}
+
+		auto refs = GetCodeReferences(strings.front().start);
+		if (refs.empty()) {
+			m_logger->LogDebug("Failed to find code references to string with pattern \"%s\".", def.pattern);
+			continue;
+		}
+
+		auto function = refs.front().func;
+		DefineUserSymbol(new Symbol(FunctionSymbol, def.name, function->GetStart()));
+
+		m_logger->LogInfo("Defined symbol `%s` for function at 0x%" PRIx64 " based on string reference(s).", def.name, function->GetStart());
+	}
+}
 
 bool SecureBootView::Init()
 {
@@ -149,20 +235,21 @@ bool SecureBootView::Init()
 	SetDefaultPlatform(aarch64->GetStandalonePlatform());
 
 	m_base = GetPredictedBaseAddress();
-	if (!m_base) {
+	if (!m_base)
 		m_logger->LogError("Failed to predict base address via relocation loop; analysis will be poor!");
-	} else {
+	else
 		m_logger->LogInfo("Predicted base address is 0x%" PRIx64 ".", m_base);
-	}
 
 	auto parentView = GetParentView();
 	AddAutoSegment(m_base, parentView->GetLength(), 0, parentView->GetLength(), SegmentReadable | SegmentExecutable);
 	AddUserSection(m_name, m_base, parentView->GetLength(), ReadOnlyCodeSectionSemantics);
 
-	for (auto const &s : KnownOffsetSymbols) {
-		DefineUserSymbol(new Symbol(s.type, s.name, m_base + s.offset));
-		m_logger->LogInfo("Defined known symbol `%s` at 0x%" PRIx64 ".", s.name, m_base + s.offset);
-	}
+	// TODO: Put these behind settings.
+	DefineFixedOffsetSymbols();
+	m_completionEvent = new AnalysisCompletionEvent(this, [this] {
+		m_logger->LogInfo("Analysis complete, searching for strings to help define symbols...");
+		DefineStringAssociatedSymbols();
+	});
 
 	AddEntryPointForAnalysis(GetDefaultPlatform(), m_base);
 
