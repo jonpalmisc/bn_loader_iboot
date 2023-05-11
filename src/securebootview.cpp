@@ -33,7 +33,7 @@ Ref<BinaryView> SecureBootViewType::Parse(BinaryView *data)
 {
 	try {
 		return new SecureBootView(data);
-	} catch (std::exception &e) {
+	} catch (...) {
 		LogError("Failed to create SecureBootView!");
 		return nullptr;
 	}
@@ -44,16 +44,16 @@ bool SecureBootViewType::IsTypeValidForData(BinaryView *data)
 	if (!data)
 		return false;
 
-	auto tag = data->ReadBuffer(0x200, 9).GetData();
-	if (memcmp(tag, "iBoot", 5) == 0)
+	auto tag = data->ReadBuffer(0x200, 9).ToEscapedString();
+	if (tag.find("iBoot") != std::string::npos)
 		return true;
-	if (memcmp(tag, "iBEC", 4) == 0)
+	if (tag.find("iBEC") != std::string::npos)
 		return true;
-	if (memcmp(tag, "iBSS", 4) == 0)
+	if (tag.find("iBSS") != std::string::npos)
 		return true;
-	if (memcmp(tag, "SecureROM", 9) == 0)
+	if (tag.find("SecureROM") != std::string::npos)
 		return true;
-	if (memcmp(tag, "AVPBooter", 9) == 0)
+	if (tag.find("AVPBooter") != std::string::npos)
 		return true;
 
 	return false;
@@ -74,18 +74,17 @@ SecureBootView::SecureBootView(BinaryView *data)
     , m_logger(CreateLogger("BinaryView.iBoot"))
     , m_completionEvent(nullptr)
     , m_base(0)
-    , m_name("Unknown iBoot")
+    , m_name("iBoot")
 {
-	std::vector<std::string> supportedVariants = {
+	std::vector<std::string> otherVariants = {
 		"SecureROM",
-		"iBoot",
 		"iBEC",
 		"iBSS",
 		"AVPBooter",
 	};
 
 	auto rawName = data->ReadBuffer(0x200, 9).ToEscapedString();
-	for (auto const &v : supportedVariants) {
+	for (auto const &v : otherVariants) {
 		if (rawName.find(v) != std::string::npos) {
 			m_name = v;
 			break;
@@ -190,8 +189,7 @@ std::vector<StringAssociatedSymbol> KnownStringAssociatedSymbols = {
 
 std::string SecureBootView::GetStringValue(BNStringReference const &ref)
 {
-	auto buffer = ReadBuffer(ref.start, ref.length);
-	return { reinterpret_cast<char *>(buffer.GetData()), buffer.GetLength() };
+	return ReadBuffer(ref.start, ref.length).ToEscapedString();
 }
 
 std::vector<BNStringReference> SecureBootView::GetStringsContaining(char const *pattern)
