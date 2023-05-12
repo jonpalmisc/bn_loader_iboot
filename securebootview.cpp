@@ -235,8 +235,6 @@ void SecureBootView::DefineStringAssociatedSymbols()
 
 bool SecureBootView::Init()
 {
-	auto settings = GetLoadSettings(GetTypeName());
-
 	auto aarch64 = Architecture::GetByName("aarch64");
 	SetDefaultArchitecture(aarch64);
 	SetDefaultPlatform(aarch64->GetStandalonePlatform());
@@ -252,9 +250,10 @@ bool SecureBootView::Init()
 	AddAutoSegment(m_base, parent->GetLength(), 0, parent->GetLength(), SegmentReadable | SegmentExecutable);
 	AddUserSection(m_name, m_base, parent->GetLength(), ReadOnlyCodeSectionSemantics);
 
-	if (settings->Get<bool>(Setting::DefineFixedOffsetSymbols))
+	auto settings = GetLoadSettings(GetTypeName());
+	if (!settings || settings->Get<bool>(Setting::DefineFixedOffsetSymbols))
 		DefineFixedOffsetSymbols();
-	if (settings->Get<bool>(Setting::UseFunctionNameHeuristics))
+	if (!settings || settings->Get<bool>(Setting::UseFunctionNameHeuristics))
 		m_completionEvent = new AnalysisCompletionEvent(this, [this] {
 			m_logger->LogInfo("Searching for strings to help define symbols...");
 			DefineStringAssociatedSymbols();
