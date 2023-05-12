@@ -59,9 +59,33 @@ bool SecureBootViewType::IsTypeValidForData(BinaryView *data)
 	return false;
 }
 
+namespace Setting {
+
+constexpr auto DefineFixedOffsetSymbols = "loader.iboot.defineFixedOffsetSymbols";
+constexpr auto UseFunctionNameHeuristics = "loader.iboot.useFunctionNameHeuristics";
+
+}
+
 Ref<Settings> SecureBootViewType::GetLoadSettingsForData(BinaryView *data)
 {
-	return nullptr;
+	auto settings = GetDefaultLoadSettingsForData(Parse(data));
+
+	settings->RegisterSetting(Setting::DefineFixedOffsetSymbols,
+	    R"({
+		"title" : "Define Fixed-Offset Symbols",
+		"type" : "boolean",
+		"default" : true,
+		"description" : "Define symbols known to reside at fixed offsets."
+	    })");
+	settings->RegisterSetting(Setting::UseFunctionNameHeuristics,
+	    R"({
+		"title" : "Use Function Name Heuristics",
+		"type" : "boolean",
+		"default" : true,
+		"description" : "Automatically name functions based on string references and other heuristics."
+	    })");
+
+	return settings;
 }
 
 bool SecureBootViewType::IsDeprecated()
@@ -211,26 +235,30 @@ void SecureBootView::DefineStringAssociatedSymbols()
 
 bool SecureBootView::Init()
 {
+	auto settings = GetLoadSettings(GetTypeName());
+
 	auto aarch64 = Architecture::GetByName("aarch64");
 	SetDefaultArchitecture(aarch64);
 	SetDefaultPlatform(aarch64->GetStandalonePlatform());
 
+	// TODO: Allow override from settings.
 	m_base = GetPredictedBaseAddress();
 	if (!m_base)
 		m_logger->LogError("Failed to predict base address via relocation loop; analysis will be poor!");
 	else
 		m_logger->LogInfo("Predicted base address is 0x%" PRIx64 ".", m_base);
 
-	auto parentView = GetParentView();
-	AddAutoSegment(m_base, parentView->GetLength(), 0, parentView->GetLength(), SegmentReadable | SegmentExecutable);
-	AddUserSection(m_name, m_base, parentView->GetLength(), ReadOnlyCodeSectionSemantics);
+	auto parent = GetParentView();
+	AddAutoSegment(m_base, parent->GetLength(), 0, parent->GetLength(), SegmentReadable | SegmentExecutable);
+	AddUserSection(m_name, m_base, parent->GetLength(), ReadOnlyCodeSectionSemantics);
 
-	// TODO: Put these behind settings.
-	DefineFixedOffsetSymbols();
-	m_completionEvent = new AnalysisCompletionEvent(this, [this] {
-		m_logger->LogInfo("Analysis complete, searching for strings to help define symbols...");
-		DefineStringAssociatedSymbols();
-	});
+	if (settings->Get<bool>(Setting::DefineFixedOffsetSymbols))
+		DefineFixedOffsetSymbols();
+	if (settings->Get<bool>(Setting::UseFunctionNameHeuristics))
+		m_completionEvent = new AnalysisCompletionEvent(this, [this] {
+			m_logger->LogInfo("Searching for strings to help define symbols...");
+			DefineStringAssociatedSymbols();
+		});
 
 	AddEntryPointForAnalysis(GetDefaultPlatform(), m_base);
 
