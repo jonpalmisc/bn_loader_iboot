@@ -1,6 +1,6 @@
 # Binary Ninja iBoot Loader
 
-A native C++ Binary Ninja loader for iBoot family (iBSS, SecureROM, etc.) images.
+A native C++ Binary Ninja view (loader) for SecureROM and iBoot.
 
 ## Get Started
 
@@ -17,7 +17,7 @@ cmake -S . -B build # -GNinja ...
 cmake --build build
 ```
 
-To install, either copy `libloader_iboot.dylib` to your Binary Ninja user
+To install, either copy `libview_iboot.dylib` to your Binary Ninja user
 plugins folder, or just run the provided `install` target:
 
 ```sh
