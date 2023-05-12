@@ -6,8 +6,8 @@
 //
 
 #include "securebootview.h"
+#include "viewsupport.h"
 
-#include <algorithm>
 #include <cinttypes>
 
 using namespace BinaryNinja;
@@ -187,27 +187,10 @@ std::vector<StringAssociatedSymbol> KnownStringAssociatedSymbols = {
 	{ "_boot_upgrade_system", "/boot/kernelcache" },
 };
 
-std::string SecureBootView::GetStringValue(BNStringReference const &ref)
-{
-	return ReadBuffer(ref.start, ref.length).ToEscapedString();
-}
-
-std::vector<BNStringReference> SecureBootView::GetStringsContaining(char const *pattern)
-{
-	std::vector<BNStringReference> strings = GetStrings();
-
-	std::vector<BNStringReference> matches;
-	std::copy_if(strings.begin(), strings.end(), std::back_inserter(matches), [this, pattern](BNStringReference const &ref) {
-		return GetStringValue(ref).find(pattern) != std::string::npos;
-	});
-
-	return matches;
-}
-
 void SecureBootView::DefineStringAssociatedSymbols()
 {
 	for (auto const &def : KnownStringAssociatedSymbols) {
-		auto strings = GetStringsContaining(def.pattern);
+		auto strings = ViewSupport::GetStringsContaining(this, def.pattern);
 		if (strings.empty()) {
 			m_logger->LogDebug("Failed to find string with pattern \"%s\".", def.pattern);
 			continue;

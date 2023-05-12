@@ -5,6 +5,8 @@ project(view_iboot)
 set(PLUGIN_SOURCE
 	src/securebootview.h
 	src/securebootview.cpp
+	src/viewsupport.h
+	src/viewsupport.cpp
 	src/plugin.cpp)
 
 add_library(view_iboot SHARED ${PLUGIN_SOURCE})
@@ -25,4 +27,3 @@ if(BN_VENDOR_API)
 	# Auto-configure an `install` target.
 	bn_install_plugin(view_iboot)
 endif()
-

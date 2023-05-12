@@ -20,10 +20,6 @@ class SecureBootView : public BN::BinaryView {
 
 	std::uint64_t GetPredictedBaseAddress();
 
-	std::string GetStringValue(BNStringReference const &ref);
-	std::vector<BNStringReference> GetStringsContaining(char const *pattern);
-	BNStringReference GetFirstStringContaining(char const *pattern);
-
 	void DefineFixedOffsetSymbols();
 	void DefineStringAssociatedSymbols();
 
