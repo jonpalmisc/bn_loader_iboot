@@ -174,9 +174,7 @@ std::vector<FixedOffsetSymbol> KnownFixedOffsetSymbols = {
 void SecureBootView::DefineFixedOffsetSymbols()
 {
 	for (auto const &def : KnownFixedOffsetSymbols) {
-		auto userSymbol = new Symbol(def.type, def.name, m_base + def.offset);
-		DefineUserSymbol(userSymbol);
-
+		DefineAutoSymbol(new Symbol(def.type, def.name, m_base + def.offset));
 		m_logger->LogInfo("Defined fixed-offset symbol `%s` at 0x%" PRIx64 ".", def.name, m_base + def.offset);
 	}
 }
@@ -226,10 +224,8 @@ void SecureBootView::DefineStringAssociatedSymbols()
 			continue;
 		}
 
-		auto function = refs.front().func;
-		DefineUserSymbol(new Symbol(FunctionSymbol, def.name, function->GetStart()));
-
-		m_logger->LogInfo("Defined symbol `%s` for function at 0x%" PRIx64 " based on string reference(s).", def.name, function->GetStart());
+		DefineUserSymbol(new Symbol(FunctionSymbol, def.name, refs[0].func->GetStart()));
+		m_logger->LogInfo("Defined symbol `%s` for function at 0x%" PRIx64 " based on string reference(s).", def.name, refs[0].func->GetStart());
 	}
 }
 
@@ -248,7 +244,7 @@ bool SecureBootView::Init()
 
 	auto parent = GetParentView();
 	AddAutoSegment(m_base, parent->GetLength(), 0, parent->GetLength(), SegmentReadable | SegmentExecutable);
-	AddUserSection(m_name, m_base, parent->GetLength(), ReadOnlyCodeSectionSemantics);
+	AddAutoSection(m_name, m_base, parent->GetLength(), ReadOnlyCodeSectionSemantics);
 
 	auto settings = GetLoadSettings(GetTypeName());
 	if (!settings || settings->Get<bool>(Setting::DefineFixedOffsetSymbols))
