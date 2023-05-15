@@ -164,7 +164,7 @@ struct FixedOffsetSymbol {
 	char const *name;
 };
 
-std::vector<FixedOffsetSymbol> KnownFixedOffsetSymbols = {
+static std::vector<FixedOffsetSymbol> g_knownFixedOffsetSymbols = {
 	{ 0x0, FunctionSymbol, "_start" },
 	{ 0x200, DataSymbol, "build_banner_string" },
 	{ 0x240, DataSymbol, "build_style_string" },
@@ -173,7 +173,7 @@ std::vector<FixedOffsetSymbol> KnownFixedOffsetSymbols = {
 
 void SecureBootView::DefineFixedOffsetSymbols()
 {
-	for (auto const &def : KnownFixedOffsetSymbols) {
+	for (auto const &def : g_knownFixedOffsetSymbols) {
 		DefineAutoSymbol(new Symbol(def.type, def.name, m_base + def.offset));
 		m_logger->LogInfo("Defined fixed-offset symbol `%s` at 0x%" PRIx64 ".", def.name, m_base + def.offset);
 	}
@@ -184,7 +184,7 @@ struct StringAssociatedSymbol {
 	char const *pattern;
 };
 
-std::vector<StringAssociatedSymbol> KnownStringAssociatedSymbols = {
+static std::vector<StringAssociatedSymbol> g_knownStringAssociatedSymbols = {
 	{ "_panic", "double panic in" },
 	{ "_platform_get_usb_serial_number_string", "CPID:" },
 	{ "_platform_get_usb_more_other_string", " NONC:" },
@@ -211,7 +211,7 @@ std::vector<StringAssociatedSymbol> KnownStringAssociatedSymbols = {
 
 void SecureBootView::DefineStringAssociatedSymbols()
 {
-	for (auto const &def : KnownStringAssociatedSymbols) {
+	for (auto const &def : g_knownStringAssociatedSymbols) {
 		auto strings = ViewSupport::GetStringsContaining(this, def.pattern);
 		if (strings.empty()) {
 			m_logger->LogDebug("Failed to find string with pattern \"%s\".", def.pattern);
