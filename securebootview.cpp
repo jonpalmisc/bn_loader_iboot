@@ -249,11 +249,15 @@ bool SecureBootView::Init()
 	auto settings = GetLoadSettings(GetTypeName());
 	if (!settings || settings->Get<bool>(Setting::DefineFixedOffsetSymbols))
 		DefineFixedOffsetSymbols();
+
+// Temporarily disabled due to AnalysisCompletionEvent crashes I don't have time to debug.
+#if 0
 	if (!settings || settings->Get<bool>(Setting::UseFunctionNameHeuristics))
 		m_completionEvent = new AnalysisCompletionEvent(this, [this] {
 			m_logger->LogInfo("Searching for strings to help define symbols...");
 			DefineStringAssociatedSymbols();
 		});
+#endif
 
 	AddEntryPointForAnalysis(GetDefaultPlatform(), m_base);
 
