@@ -19,7 +19,7 @@ class AIFView : public BN::BinaryView {
 	BN::Ref<BN::Logger> m_logger;
 	BN::Ref<BN::AnalysisCompletionEvent> m_completionEvent;
 
-	std::uint64_t m_base;
+	std::uint64_t m_base = 0;
 	std::string m_name;
 
 	std::uint64_t GetPredictedBaseAddress();
@@ -28,7 +28,7 @@ class AIFView : public BN::BinaryView {
 	void DefineStringAssociatedSymbols();
 
 public:
-	AIFView(BinaryView *data);
+	explicit AIFView(BinaryView *data);
 
 	bool Init() override;
 };

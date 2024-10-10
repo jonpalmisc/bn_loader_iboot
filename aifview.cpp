@@ -95,7 +95,6 @@ AIFView::AIFView(BinaryView *data)
     : BinaryView(AIFViewDisplayName, data->GetFile(), data)
     , m_logger(LogRegistry::CreateLogger("BinaryView.iBoot"))
     , m_completionEvent(nullptr)
-    , m_base(0)
     , m_name("iBoot")
 {
 	std::vector<std::string> otherVariants = {
