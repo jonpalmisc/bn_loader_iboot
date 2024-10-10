@@ -1,13 +1,12 @@
-#include "securebootview.h"
-
-static SecureBootViewType *g_secureBootViewType = nullptr;
+#include "aifview.h"
 
 BN_DECLARE_CORE_ABI_VERSION
 
 extern "C" BINARYNINJAPLUGIN bool CorePluginInit()
 {
-	g_secureBootViewType = new SecureBootViewType;
+	static AIFViewType *aifViewType = nullptr;
+	aifViewType = new AIFViewType;
 
-	BinaryNinja::BinaryViewType::Register(g_secureBootViewType);
+	BinaryNinja::BinaryViewType::Register(aifViewType);
 	return true;
 }

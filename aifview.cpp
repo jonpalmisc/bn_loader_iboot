@@ -5,41 +5,41 @@
 //  of the license can be found in the LICENSE.txt file.
 //
 
-#include "securebootview.h"
-#include "viewsupport.h"
+#include "aifview.h"
 
 #include <cinttypes>
 
 using namespace BinaryNinja;
 
-constexpr auto SecureBootViewDisplayName = "iBoot";
+static constexpr auto AIFViewDisplayName = "iBoot";
 
-SecureBootViewType::SecureBootViewType()
-    : BinaryViewType(SecureBootViewDisplayName, SecureBootViewDisplayName)
+AIFViewType::AIFViewType()
+    : BinaryViewType(AIFViewDisplayName, AIFViewDisplayName)
+    , m_logger(LogRegistry::CreateLogger("BinaryView.iBoot"))
 {
 }
 
-Ref<BinaryView> SecureBootViewType::Create(BinaryView *data)
+Ref<BinaryView> AIFViewType::Create(BinaryView *data)
 {
 	try {
-		return new SecureBootView(data);
+		return new AIFView(data);
 	} catch (std::exception &e) {
-		LogError("Failed to create SecureBootView!");
+		m_logger->LogError("Failed to create AIFView!");
 		return nullptr;
 	}
 }
 
-Ref<BinaryView> SecureBootViewType::Parse(BinaryView *data)
+Ref<BinaryView> AIFViewType::Parse(BinaryView *data)
 {
 	try {
-		return new SecureBootView(data);
+		return new AIFView(data);
 	} catch (...) {
-		LogError("Failed to create SecureBootView!");
+		m_logger->LogError("Failed to create AIFView!");
 		return nullptr;
 	}
 }
 
-bool SecureBootViewType::IsTypeValidForData(BinaryView *data)
+bool AIFViewType::IsTypeValidForData(BinaryView *data)
 {
 	if (!data)
 		return false;
@@ -59,25 +59,23 @@ bool SecureBootViewType::IsTypeValidForData(BinaryView *data)
 	return false;
 }
 
-namespace Setting {
+struct SettingKey {
+	static constexpr auto DefineFixedSymbols = "view.aif.defineFixedSymbols";
+	static constexpr auto UseFunctionHeuristics = "view.aif.useFunctionHeuristics";
+};
 
-constexpr auto DefineFixedOffsetSymbols = "loader.iboot.defineFixedOffsetSymbols";
-constexpr auto UseFunctionNameHeuristics = "loader.iboot.useFunctionNameHeuristics";
-
-}
-
-Ref<Settings> SecureBootViewType::GetLoadSettingsForData(BinaryView *data)
+Ref<Settings> AIFViewType::GetLoadSettingsForData(BinaryView *data)
 {
 	auto settings = GetDefaultLoadSettingsForData(Parse(data));
 
-	settings->RegisterSetting(Setting::DefineFixedOffsetSymbols,
+	settings->RegisterSetting(SettingKey::DefineFixedSymbols,
 	    R"({
 		"title" : "Define Fixed-Offset Symbols",
 		"type" : "boolean",
 		"default" : true,
 		"description" : "Define symbols known to reside at fixed offsets."
 	    })");
-	settings->RegisterSetting(Setting::UseFunctionNameHeuristics,
+	settings->RegisterSetting(SettingKey::UseFunctionHeuristics,
 	    R"({
 		"title" : "Use Function Name Heuristics",
 		"type" : "boolean",
@@ -88,14 +86,14 @@ Ref<Settings> SecureBootViewType::GetLoadSettingsForData(BinaryView *data)
 	return settings;
 }
 
-bool SecureBootViewType::IsDeprecated()
+bool AIFViewType::IsDeprecated()
 {
 	return false;
 }
 
-SecureBootView::SecureBootView(BinaryView *data)
-    : BinaryView(SecureBootViewDisplayName, data->GetFile(), data)
-    , m_logger(CreateLogger("BinaryView.iBoot"))
+AIFView::AIFView(BinaryView *data)
+    : BinaryView(AIFViewDisplayName, data->GetFile(), data)
+    , m_logger(LogRegistry::CreateLogger("BinaryView.iBoot"))
     , m_completionEvent(nullptr)
     , m_base(0)
     , m_name("iBoot")
@@ -116,7 +114,7 @@ SecureBootView::SecureBootView(BinaryView *data)
 	}
 }
 
-uint64_t SecureBootView::GetPredictedBaseAddress()
+uint64_t AIFView::GetPredictedBaseAddress()
 {
 	auto parentView = GetParentView();
 	auto arch = GetDefaultArchitecture();
@@ -158,6 +156,24 @@ uint64_t SecureBootView::GetPredictedBaseAddress()
 	return 0;
 }
 
+static std::string GetStringValue(Ref<BinaryView> data, BNStringReference const &ref)
+{
+	return data->ReadBuffer(ref.start, ref.length).ToEscapedString();
+}
+
+static std::vector<BNStringReference> GetStringsContaining(Ref<BinaryView> data, char const *pattern)
+{
+	auto refContainsPattern = [data, pattern](BNStringReference const &ref) {
+		return GetStringValue(data, ref).find(pattern) != std::string::npos;
+	};
+
+	auto strings = data->GetStrings();
+	std::vector<BNStringReference> matches;
+	std::copy_if(strings.begin(), strings.end(), std::back_inserter(matches), refContainsPattern);
+
+	return matches;
+}
+
 struct FixedOffsetSymbol {
 	std::uint32_t offset;
 	BNSymbolType type;
@@ -171,7 +187,7 @@ static std::vector<FixedOffsetSymbol> g_knownFixedOffsetSymbols = {
 	{ 0x280, DataSymbol, "build_tag_string" },
 };
 
-void SecureBootView::DefineFixedOffsetSymbols()
+void AIFView::DefineFixedOffsetSymbols()
 {
 	for (auto const &def : g_knownFixedOffsetSymbols) {
 		DefineAutoSymbol(new Symbol(def.type, def.name, m_base + def.offset));
@@ -209,10 +225,10 @@ static std::vector<StringAssociatedSymbol> g_knownStringAssociatedSymbols = {
 	{ "_boot_upgrade_system", "/boot/kernelcache" },
 };
 
-void SecureBootView::DefineStringAssociatedSymbols()
+void AIFView::DefineStringAssociatedSymbols()
 {
 	for (auto const &def : g_knownStringAssociatedSymbols) {
-		auto strings = ViewSupport::GetStringsContaining(this, def.pattern);
+		auto strings = GetStringsContaining(this, def.pattern);
 		if (strings.empty()) {
 			m_logger->LogDebug("Failed to find string with pattern \"%s\".", def.pattern);
 			continue;
@@ -229,7 +245,7 @@ void SecureBootView::DefineStringAssociatedSymbols()
 	}
 }
 
-bool SecureBootView::Init()
+bool AIFView::Init()
 {
 	auto aarch64 = Architecture::GetByName("aarch64");
 	SetDefaultArchitecture(aarch64);
@@ -247,7 +263,7 @@ bool SecureBootView::Init()
 	AddAutoSection(m_name, m_base, parent->GetLength(), ReadOnlyCodeSectionSemantics);
 
 	auto settings = GetLoadSettings(GetTypeName());
-	if (!settings || settings->Get<bool>(Setting::DefineFixedOffsetSymbols))
+	if (!settings || settings->Get<bool>(SettingKey::DefineFixedSymbols))
 		DefineFixedOffsetSymbols();
 
 // Temporarily disabled due to AnalysisCompletionEvent crashes I don't have time to debug.
