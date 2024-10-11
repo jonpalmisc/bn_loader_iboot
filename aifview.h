@@ -15,7 +15,8 @@ namespace BN = BinaryNinja;
 ///
 /// Supports loading Apple's iBoot and related firmware images from the same
 /// codebase, e.g. SecureROM, iBSS, AVPBooter, etc.
-class AIFView : public BN::BinaryView {
+class AIFView : public BN::BinaryView
+{
 	BN::Ref<BN::Logger> m_logger;
 	BN::Ref<BN::AnalysisCompletionEvent> m_completionEvent;
 
@@ -27,13 +28,17 @@ class AIFView : public BN::BinaryView {
 	void DefineFixedOffsetSymbols();
 	void DefineStringAssociatedSymbols();
 
+	uint64_t PerformGetStart() const override;
+	uint64_t PerformGetEntryPoint() const override;
+
 public:
 	explicit AIFView(BinaryView *data);
 
 	bool Init() override;
 };
 
-class AIFViewType : public BN::BinaryViewType {
+class AIFViewType : public BN::BinaryViewType
+{
 	BN::Ref<BN::Logger> m_logger;
 
 public:

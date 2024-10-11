@@ -11,88 +11,14 @@
 
 using namespace BinaryNinja;
 
-static constexpr auto AIFViewDisplayName = "iBoot";
+static constexpr auto OFFSET_BUILD_BANNER = 0x200;
+static constexpr auto OFFSET_BUILD_STYLE = 0x240;
+static constexpr auto OFFSET_BUILD_TAG = 0x240;
 
-AIFViewType::AIFViewType()
-    : BinaryViewType(AIFViewDisplayName, AIFViewDisplayName)
-    , m_logger(LogRegistry::CreateLogger("BinaryView.iBoot"))
-{
-}
-
-Ref<BinaryView> AIFViewType::Create(BinaryView *data)
-{
-	try {
-		return new AIFView(data);
-	} catch (std::exception &e) {
-		m_logger->LogError("Failed to create AIFView!");
-		return nullptr;
-	}
-}
-
-Ref<BinaryView> AIFViewType::Parse(BinaryView *data)
-{
-	try {
-		return new AIFView(data);
-	} catch (...) {
-		m_logger->LogError("Failed to create AIFView!");
-		return nullptr;
-	}
-}
-
-bool AIFViewType::IsTypeValidForData(BinaryView *data)
-{
-	if (!data)
-		return false;
-
-	auto tag = data->ReadBuffer(0x200, 9).ToEscapedString();
-	if (tag.find("iBoot") != std::string::npos)
-		return true;
-	if (tag.find("iBEC") != std::string::npos)
-		return true;
-	if (tag.find("iBSS") != std::string::npos)
-		return true;
-	if (tag.find("SecureROM") != std::string::npos)
-		return true;
-	if (tag.find("AVPBooter") != std::string::npos)
-		return true;
-
-	return false;
-}
-
-struct SettingKey {
-	static constexpr auto DefineFixedSymbols = "view.aif.defineFixedSymbols";
-	static constexpr auto UseFunctionHeuristics = "view.aif.useFunctionHeuristics";
-};
-
-Ref<Settings> AIFViewType::GetLoadSettingsForData(BinaryView *data)
-{
-	auto settings = GetDefaultLoadSettingsForData(Parse(data));
-
-	settings->RegisterSetting(SettingKey::DefineFixedSymbols,
-	    R"({
-		"title" : "Define Fixed-Offset Symbols",
-		"type" : "boolean",
-		"default" : true,
-		"description" : "Define symbols known to reside at fixed offsets."
-	    })");
-	settings->RegisterSetting(SettingKey::UseFunctionHeuristics,
-	    R"({
-		"title" : "Use Function Name Heuristics",
-		"type" : "boolean",
-		"default" : true,
-		"description" : "Automatically name functions based on string references and other heuristics."
-	    })");
-
-	return settings;
-}
-
-bool AIFViewType::IsDeprecated()
-{
-	return false;
-}
+static constexpr auto VIEW_DISPLAY_NAME = "iBoot";
 
 AIFView::AIFView(BinaryView *data)
-    : BinaryView(AIFViewDisplayName, data->GetFile(), data)
+    : BinaryView(VIEW_DISPLAY_NAME, data->GetFile(), data)
     , m_logger(LogRegistry::CreateLogger("BinaryView.iBoot"))
     , m_completionEvent(nullptr)
     , m_name("iBoot")
@@ -104,9 +30,11 @@ AIFView::AIFView(BinaryView *data)
 		"AVPBooter",
 	};
 
-	auto rawName = data->ReadBuffer(0x200, 9).ToEscapedString();
-	for (auto const &v : otherVariants) {
-		if (rawName.find(v) != std::string::npos) {
+	auto rawName = data->ReadBuffer(OFFSET_BUILD_BANNER, 9).ToEscapedString();
+	for (auto const &v : otherVariants)
+	{
+		if (rawName.find(v) != std::string::npos)
+		{
 			m_name = v;
 			break;
 		}
@@ -116,17 +44,30 @@ AIFView::AIFView(BinaryView *data)
 uint64_t AIFView::GetPredictedBaseAddress()
 {
 	auto parentView = GetParentView();
+	if (!parentView)
+	{
+		m_logger->LogError("Failed to get parent view while detecting base address!");
+		return 0;
+	}
+
 	auto arch = GetDefaultArchitecture();
+	if (!arch)
+	{
+		m_logger->LogError("Failed to get default architecture while detecting base address!");
+		return 0;
+	}
 
 	std::uint8_t rawInsn[4] = { 0 };
 	std::vector<InstructionTextToken> tokens;
 	std::size_t insnLen = 0;
 
-	for (uint64_t i = 0; i < 0x200; i += 4) {
+	for (uint64_t i = 0; i < OFFSET_BUILD_BANNER; i += 4)
+	{
 		parentView->Read(rawInsn, i, sizeof(rawInsn));
 
 		auto ok = arch->GetInstructionText((uint8_t const *)&rawInsn, i, insnLen, tokens);
-		if (!ok || tokens.empty()) {
+		if (!ok || tokens.empty())
+		{
 			m_logger->LogError("Failed to get instruction text at offset 0x%x.", i);
 			return 0;
 		}
@@ -144,9 +85,12 @@ uint64_t AIFView::GetPredictedBaseAddress()
 		BinaryReader reader(parentView);
 		reader.Seek(offset);
 
-		try {
+		try
+		{
 			return reader.Read64();
-		} catch (...) {
+		}
+		catch (...)
+		{
 			m_logger->LogError("Failed to read parent view while predicting base address!");
 			break;
 		}
@@ -155,25 +99,8 @@ uint64_t AIFView::GetPredictedBaseAddress()
 	return 0;
 }
 
-static std::string GetStringValue(Ref<BinaryView> data, BNStringReference const &ref)
+struct FixedOffsetSymbol
 {
-	return data->ReadBuffer(ref.start, ref.length).ToEscapedString();
-}
-
-static std::vector<BNStringReference> GetStringsContaining(Ref<BinaryView> data, char const *pattern)
-{
-	auto refContainsPattern = [data, pattern](BNStringReference const &ref) {
-		return GetStringValue(data, ref).find(pattern) != std::string::npos;
-	};
-
-	auto strings = data->GetStrings();
-	std::vector<BNStringReference> matches;
-	std::copy_if(strings.begin(), strings.end(), std::back_inserter(matches), refContainsPattern);
-
-	return matches;
-}
-
-struct FixedOffsetSymbol {
 	std::uint32_t offset;
 	BNSymbolType type;
 	char const *name;
@@ -181,100 +108,169 @@ struct FixedOffsetSymbol {
 
 static std::vector<FixedOffsetSymbol> g_knownFixedOffsetSymbols = {
 	{ 0x0, FunctionSymbol, "_start" },
-	{ 0x200, DataSymbol, "build_banner_string" },
-	{ 0x240, DataSymbol, "build_style_string" },
-	{ 0x280, DataSymbol, "build_tag_string" },
+	{ OFFSET_BUILD_BANNER, DataSymbol, "build_banner_string" },
+	{ OFFSET_BUILD_STYLE, DataSymbol, "build_style_string" },
+	{ OFFSET_BUILD_TAG, DataSymbol, "build_tag_string" },
 };
 
 void AIFView::DefineFixedOffsetSymbols()
 {
-	for (auto const &def : g_knownFixedOffsetSymbols) {
+	for (auto const &def : g_knownFixedOffsetSymbols)
+	{
 		DefineAutoSymbol(new Symbol(def.type, def.name, m_base + def.offset));
-		m_logger->LogInfo("Defined fixed-offset symbol `%s` at 0x%" PRIx64 ".", def.name, m_base + def.offset);
+		m_logger->LogDebug("Defined fixed-offset symbol `%s` at 0x%" PRIx64 ".", def.name, m_base + def.offset);
 	}
 }
 
-struct StringAssociatedSymbol {
-	char const *name;
-	char const *pattern;
-};
-
-static std::vector<StringAssociatedSymbol> g_knownStringAssociatedSymbols = {
-	{ "_panic", "double panic in" },
-	{ "_platform_get_usb_serial_number_string", "CPID:" },
-	{ "_platform_get_usb_more_other_string", " NONC:" },
-	{ "_image4_get_partial", "IMG4" },
-	{ "_UpdateDeviceTree", "fuse-revision" },
-	{ "_main_task", "debug-uarts" },
-	{ "_platform_init_display", "backlight-level" },
-	{ "_do_printf", "<null>" },
-	{ "_do_memboot", "Combo image too large" },
-	{ "_do_go", "Memory image not valid" },
-	{ "_task_init", "idle task" },
-	{ "_sys_setup_default_environment", "/System/Library/Caches/com.apple.kernelcaches/kernelcache" },
-	{ "_check_autoboot", "aborting autoboot due to user intervention" },
-	{ "_do_setpict", "picture too large" },
-	{ "_arm_exception_abort", "ARM %s abort at 0x%016llx:" },
-	{ "_do_devicetree", "Device Tree image not valid" },
-	{ "_do_ramdisk", "Ramdisk image not valid" },
-	{ "_usb_serial_init", "Apple USB Serial Interface" },
-	{ "_nvme_bdev_create", "construct blockdev for namespace %d" },
-	{ "_image4_dump_list", "image %p: bdev %p type" },
-	{ "_prepare_and_jump", "End of %s serial output" },
-	{ "_boot_upgrade_system", "/boot/kernelcache" },
-};
-
-void AIFView::DefineStringAssociatedSymbols()
+uint64_t AIFView::PerformGetStart() const
 {
-	for (auto const &def : g_knownStringAssociatedSymbols) {
-		auto strings = GetStringsContaining(this, def.pattern);
-		if (strings.empty()) {
-			m_logger->LogDebug("Failed to find string with pattern \"%s\".", def.pattern);
-			continue;
-		}
-
-		auto refs = GetCodeReferences(strings.front().start);
-		if (refs.empty()) {
-			m_logger->LogDebug("Failed to find code references to string with pattern \"%s\".", def.pattern);
-			continue;
-		}
-
-		DefineUserSymbol(new Symbol(FunctionSymbol, def.name, refs[0].func->GetStart()));
-		m_logger->LogInfo("Defined symbol `%s` for function at 0x%" PRIx64 " based on string reference(s).", def.name, refs[0].func->GetStart());
-	}
+	return m_base;
 }
+
+uint64_t AIFView::PerformGetEntryPoint() const
+{
+	return m_base;
+}
+
+static constexpr auto SETTING_DEFINE_FIXED_SYMS = "loader.iboot.defineFixedSymbols";
 
 bool AIFView::Init()
 {
-	auto aarch64 = Architecture::GetByName("aarch64");
-	SetDefaultArchitecture(aarch64);
-	SetDefaultPlatform(aarch64->GetStandalonePlatform());
+	SetDefaultPlatform(Platform::GetByName("aarch64"));
+	SetDefaultArchitecture(GetDefaultPlatform()->GetArchitecture());
 
-	// TODO: Allow override from settings.
 	m_base = GetPredictedBaseAddress();
+
+	auto settings = GetLoadSettings(GetTypeName());
+	if (settings)
+	{
+		if (settings->Contains("loader.imageBase"))
+			m_base = settings->Get<uint64_t>("loader.imageBase", this);
+
+		if (settings->Contains("loader.platform"))
+		{
+			auto overridePlatformName = settings->Get<std::string>("loader.platform", this);
+			auto overridePlatform = Platform::GetByName(overridePlatformName);
+			if (overridePlatform)
+			{
+				SetDefaultPlatform(overridePlatform);
+				SetDefaultArchitecture(overridePlatform->GetArchitecture());
+			}
+			else
+			{
+				m_logger->LogError("Invalid platform override provided!");
+			}
+		}
+	}
+
 	if (!m_base)
-		m_logger->LogError("Failed to predict base address via relocation loop; analysis will be poor!");
-	else
-		m_logger->LogInfo("Predicted base address is 0x%" PRIx64 ".", m_base);
+		m_logger->LogWarn("No base address provided or detected; analysis will be poor!");
 
 	auto parent = GetParentView();
 	AddAutoSegment(m_base, parent->GetLength(), 0, parent->GetLength(), SegmentReadable | SegmentExecutable);
 	AddAutoSection(m_name, m_base, parent->GetLength(), ReadOnlyCodeSectionSemantics);
-
-	auto settings = GetLoadSettings(GetTypeName());
-	if (!settings || settings->Get<bool>(SettingKey::DefineFixedSymbols))
-		DefineFixedOffsetSymbols();
-
-// Temporarily disabled due to AnalysisCompletionEvent crashes I don't have time to debug.
-#if 0
-	if (!settings || settings->Get<bool>(Setting::UseFunctionNameHeuristics))
-		m_completionEvent = new AnalysisCompletionEvent(this, [this] {
-			m_logger->LogInfo("Searching for strings to help define symbols...");
-			DefineStringAssociatedSymbols();
-		});
-#endif
-
 	AddEntryPointForAnalysis(GetDefaultPlatform(), m_base);
 
+	if (!settings || settings->Get<bool>(SETTING_DEFINE_FIXED_SYMS))
+		DefineFixedOffsetSymbols();
+
 	return true;
+}
+
+AIFViewType::AIFViewType()
+    : BinaryViewType(VIEW_DISPLAY_NAME, VIEW_DISPLAY_NAME)
+    , m_logger(LogRegistry::CreateLogger("BinaryView.iBoot"))
+{
+}
+
+Ref<BinaryView> AIFViewType::Create(BinaryView *data)
+{
+	try
+	{
+		return new AIFView(data);
+	}
+	catch (std::exception &e)
+	{
+		m_logger->LogError("Failed to create AIFView!");
+		return nullptr;
+	}
+}
+
+Ref<BinaryView> AIFViewType::Parse(BinaryView *data)
+{
+	try
+	{
+		return new AIFView(data);
+	}
+	catch (...)
+	{
+		m_logger->LogError("Failed to create AIFView!");
+		return nullptr;
+	}
+}
+
+bool AIFViewType::IsTypeValidForData(BinaryView *data)
+{
+	if (!data)
+		return false;
+
+	// A legit iBoot family image should be much larger than this, but it
+	// should at least be large enough to hold the build tag region and
+	// table of pointers that follows.
+	//
+	// This also assures the read below will be in-bounds.
+	if (data->GetLength() < 0x400)
+		return false;
+
+	auto tag = data->ReadBuffer(OFFSET_BUILD_BANNER, 9).ToEscapedString();
+	if (tag.find("iBoot") != std::string::npos)
+		return true;
+	if (tag.find("iBEC") != std::string::npos)
+		return true;
+	if (tag.find("iBSS") != std::string::npos)
+		return true;
+	if (tag.find("SecureROM") != std::string::npos)
+		return true;
+	if (tag.find("AVPBooter") != std::string::npos)
+		return true;
+
+	return false;
+}
+
+bool AIFViewType::IsDeprecated()
+{
+	return false;
+}
+
+Ref<Settings> AIFViewType::GetLoadSettingsForData(BinaryView *data)
+{
+	auto view = Parse(data);
+	if (!view || !view->Init())
+	{
+		m_logger->LogError("Failed to initialize view while getting load settings!");
+		return nullptr;
+	}
+
+	auto settings = GetDefaultLoadSettingsForData(view);
+
+	// Allow changes in case the auto-detected base address is wrong.
+	if (settings->Contains("loader.imageBase"))
+		settings->UpdateProperty("loader.imageBase", "readOnly", false);
+
+	// Defaults to AArch64, but allow changing this in case someone is
+	// trying to load an ancient 32-bit iBoot.
+	if (settings->Contains("loader.platform"))
+		settings->UpdateProperty("loader.platform", "readOnly", false);
+
+	// We don't define a lot of fixed-offset symbols, but I suppose there
+	// should be an escape hatch for that as well.
+	settings->RegisterSetting(SETTING_DEFINE_FIXED_SYMS,
+	    R"({
+		"title" : "Define Fixed-Offset Symbols",
+		"type" : "boolean",
+		"default" : true,
+		"description" : "Define symbols known to reside at fixed offsets."
+	    })");
+
+	return settings;
 }
