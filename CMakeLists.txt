@@ -13,7 +13,7 @@ set(HEADLESS ON)
 
 add_subdirectory(${BN_API_PATH} ${PROJECT_BINARY_DIR}/api)
 
-add_library(view_iboot SHARED aifview.h aifview.cpp plugin.cpp)
+add_library(view_iboot SHARED ibfview.h ibfview.cpp plugin.cpp)
 target_compile_features(view_iboot PRIVATE cxx_std_17 c_std_99)
 target_link_libraries(view_iboot PRIVATE binaryninjaapi)
 

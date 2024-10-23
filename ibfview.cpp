@@ -5,7 +5,7 @@
 //  of the license can be found in the LICENSE.txt file.
 //
 
-#include "aifview.h"
+#include "ibfview.h"
 
 #include <cinttypes>
 
@@ -17,7 +17,7 @@ static constexpr auto OFFSET_BUILD_TAG = 0x240;
 
 static constexpr auto VIEW_DISPLAY_NAME = "iBoot";
 
-AIFView::AIFView(BinaryView *data)
+IBFView::IBFView(BinaryView *data)
     : BinaryView(VIEW_DISPLAY_NAME, data->GetFile(), data)
     , m_logger(LogRegistry::CreateLogger("BinaryView.iBoot"))
     , m_completionEvent(nullptr)
@@ -41,7 +41,7 @@ AIFView::AIFView(BinaryView *data)
 	}
 }
 
-uint64_t AIFView::GetPredictedBaseAddress()
+uint64_t IBFView::GetPredictedBaseAddress()
 {
 	auto parentView = GetParentView();
 	if (!parentView)
@@ -113,7 +113,7 @@ static std::vector<FixedOffsetSymbol> g_knownFixedOffsetSymbols = {
 	{ OFFSET_BUILD_TAG, DataSymbol, "build_tag_string" },
 };
 
-void AIFView::DefineFixedOffsetSymbols()
+void IBFView::DefineFixedOffsetSymbols()
 {
 	for (auto const &def : g_knownFixedOffsetSymbols)
 	{
@@ -122,19 +122,19 @@ void AIFView::DefineFixedOffsetSymbols()
 	}
 }
 
-uint64_t AIFView::PerformGetStart() const
+uint64_t IBFView::PerformGetStart() const
 {
 	return m_base;
 }
 
-uint64_t AIFView::PerformGetEntryPoint() const
+uint64_t IBFView::PerformGetEntryPoint() const
 {
 	return m_base;
 }
 
 static constexpr auto SETTING_DEFINE_FIXED_SYMS = "loader.iboot.defineFixedSymbols";
 
-bool AIFView::Init()
+bool IBFView::Init()
 {
 	SetDefaultPlatform(Platform::GetByName("aarch64"));
 	SetDefaultArchitecture(GetDefaultPlatform()->GetArchitecture());
@@ -177,39 +177,39 @@ bool AIFView::Init()
 	return true;
 }
 
-AIFViewType::AIFViewType()
+IBFViewType::IBFViewType()
     : BinaryViewType(VIEW_DISPLAY_NAME, VIEW_DISPLAY_NAME)
     , m_logger(LogRegistry::CreateLogger("BinaryView.iBoot"))
 {
 }
 
-Ref<BinaryView> AIFViewType::Create(BinaryView *data)
+Ref<BinaryView> IBFViewType::Create(BinaryView *data)
 {
 	try
 	{
-		return new AIFView(data);
+		return new IBFView(data);
 	}
 	catch (std::exception &e)
 	{
-		m_logger->LogError("Failed to create AIFView!");
+		m_logger->LogError("Failed to create view!");
 		return nullptr;
 	}
 }
 
-Ref<BinaryView> AIFViewType::Parse(BinaryView *data)
+Ref<BinaryView> IBFViewType::Parse(BinaryView *data)
 {
 	try
 	{
-		return new AIFView(data);
+		return new IBFView(data);
 	}
 	catch (...)
 	{
-		m_logger->LogError("Failed to create AIFView!");
+		m_logger->LogError("Failed to create view!");
 		return nullptr;
 	}
 }
 
-bool AIFViewType::IsTypeValidForData(BinaryView *data)
+bool IBFViewType::IsTypeValidForData(BinaryView *data)
 {
 	if (!data)
 		return false;
@@ -237,12 +237,12 @@ bool AIFViewType::IsTypeValidForData(BinaryView *data)
 	return false;
 }
 
-bool AIFViewType::IsDeprecated()
+bool IBFViewType::IsDeprecated()
 {
 	return false;
 }
 
-Ref<Settings> AIFViewType::GetLoadSettingsForData(BinaryView *data)
+Ref<Settings> IBFViewType::GetLoadSettingsForData(BinaryView *data)
 {
 	auto view = Parse(data);
 	if (!view || !view->Init())

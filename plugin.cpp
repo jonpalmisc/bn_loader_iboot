@@ -1,12 +1,12 @@
-#include "aifview.h"
+#include "ibfview.h"
 
 BN_DECLARE_CORE_ABI_VERSION
 
 extern "C" BINARYNINJAPLUGIN bool CorePluginInit()
 {
-	static AIFViewType *aifViewType = nullptr;
-	aifViewType = new AIFViewType;
+	static IBFViewType *ibfViewType = nullptr;
+	ibfViewType = new IBFViewType;
 
-	BinaryNinja::BinaryViewType::Register(aifViewType);
+	BinaryNinja::BinaryViewType::Register(ibfViewType);
 	return true;
 }
