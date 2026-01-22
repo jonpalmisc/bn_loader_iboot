@@ -11,11 +11,16 @@
 
 namespace BN = BinaryNinja;
 
-class SecureBootView : public BN::BinaryView {
+/// iBoot family view.
+///
+/// Supports loading Apple's iBoot and related firmware images from the same
+/// codebase, e.g. SecureROM, iBSS, AVPBooter, etc.
+class IBFView : public BN::BinaryView
+{
 	BN::Ref<BN::Logger> m_logger;
 	BN::Ref<BN::AnalysisCompletionEvent> m_completionEvent;
 
-	std::uint64_t m_base;
+	std::uint64_t m_base = 0;
 	std::string m_name;
 
 	std::uint64_t GetPredictedBaseAddress();
@@ -23,15 +28,21 @@ class SecureBootView : public BN::BinaryView {
 	void DefineFixedOffsetSymbols();
 	void DefineStringAssociatedSymbols();
 
+	uint64_t PerformGetStart() const override;
+	uint64_t PerformGetEntryPoint() const override;
+
 public:
-	SecureBootView(BinaryView *data);
+	explicit IBFView(BinaryView *data);
 
 	bool Init() override;
 };
 
-class SecureBootViewType : public BN::BinaryViewType {
+class IBFViewType : public BN::BinaryViewType
+{
+	BN::Ref<BN::Logger> m_logger;
+
 public:
-	SecureBootViewType();
+	IBFViewType();
 
 	BN::Ref<BN::BinaryView> Create(BN::BinaryView *data) override;
 	BN::Ref<BN::BinaryView> Parse(BN::BinaryView *data) override;

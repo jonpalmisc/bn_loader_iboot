@@ -4,6 +4,8 @@ BasedOnStyle:			WebKit
 AlignConsecutiveMacros:		Consecutive
 AlignTrailingComments:		true
 
+BreakBeforeBraces:		Allman
+
 UseTab:				AlignWithSpaces
 IndentWidth:			8
 AccessModifierOffset:		-8
